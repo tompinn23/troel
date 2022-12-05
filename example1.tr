@@ -1,0 +1,21 @@
+pub struct BlockA extends Block {
+	int id;
+	
+
+	pub fn new(int id) {
+		this.id = id;
+	}
+	
+	pub fn CheckID() -> int {
+		return this.id;
+	}
+};
+
+
+pub fn main(string[] args) -> int {
+	int a = 128;
+	int b = 15;
+	int c = a / b;
+	int d = (a - b) + c;
+	return 0;
+}

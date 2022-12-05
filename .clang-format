@@ -1,0 +1,10 @@
+---
+BasedOnStyle: LLVM
+IndentWidth: 2
+---
+Language: Cpp
+PointerAlignment: Left
+AlignArrayOfStructures: Left
+AlignConsecutiveAssignments: 
+  Enabled: True
+ColumnLimit: 120
