@@ -17,6 +17,8 @@ typedef enum {
   TOKEN_STAR,
   TOKEN_ASSIGN,
   TOKEN_EXCL,
+  TOKEN_AMPERSAND,
+  TOKEN_PIPE,
 
   TOKEN_NE,
   TOKEN_EQ,
@@ -24,6 +26,8 @@ typedef enum {
   TOKEN_LT,
   TOKEN_GTEQ,
   TOKEN_LTEQ,
+  TOKEN_AND,
+  TOKEN_OR,
 
   TOKEN_IDENT,
   TOKEN_STRING,

@@ -25,7 +25,9 @@ static struct tr_token error_token(struct tr_lexer* l, const char* message) {
 }
 
 static bool is_digit(char c) { return c >= '0' && c <= '9'; }
-static bool is_alpha(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
+static bool is_alpha(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
 
 static int advance(struct tr_lexer* l) {
   l->current++;
@@ -99,7 +101,8 @@ static struct tr_token make_number(struct tr_lexer* l) {
   return make_token(l, TOKEN_INT);
 }
 
-static token_type check_keyword(struct tr_lexer* l, int start, int len, const char* rest, token_type type) {
+static token_type check_keyword(struct tr_lexer* l, int start, int len, const char* rest,
+                                token_type type) {
   if (l->current - l->start == start + len && memcmp(l->start + start, rest, len) == 0) {
     return type;
   }
@@ -192,6 +195,8 @@ struct tr_token tr_lexer_next_token(struct tr_lexer* l) {
     case '+': return make_token(l, TOKEN_PLUS);
     case '/': return make_token(l, TOKEN_SLASH);
     case '*': return make_token(l, TOKEN_STAR);
+    case '&': return make_token(l, match(l, '&') ? TOKEN_AND : TOKEN_AMPERSAND);
+    case '|': return make_token(l, match(l, '|') ? TOKEN_OR : TOKEN_PIPE);
     case '=': return make_token(l, match(l, '=') ? TOKEN_EQ : TOKEN_ASSIGN);
     case '!': return make_token(l, match(l, '=') ? TOKEN_NE : TOKEN_EXCL);
     case '<': return make_token(l, match(l, '=') ? TOKEN_LTEQ : TOKEN_LT);

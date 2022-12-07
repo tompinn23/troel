@@ -26,3 +26,13 @@ char* mem_strdup(const char* str) {
   new[len] = '\0';
   return new;
 }
+
+char* mem_strndup(const char* str, int max) {
+  size_t len = strlen(str);
+  if(len > max)
+    len = max;
+  char* new = mem_realloc(NULL, 0, (len + 1) * sizeof(char));
+  memcpy(new, str, len);
+  new[len] = '\0';
+  return new;
+}

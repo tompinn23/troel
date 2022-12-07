@@ -5,6 +5,6 @@ IndentWidth: 2
 Language: Cpp
 PointerAlignment: Left
 AlignArrayOfStructures: Left
-AlignConsecutiveAssignments: 
+AlignConsecutiveAssignments:
   Enabled: True
-ColumnLimit: 120
+ColumnLimit: 100

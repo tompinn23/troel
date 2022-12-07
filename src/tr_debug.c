@@ -1,6 +1,7 @@
 #include "tr_debug.h"
 
 #include "tr_opcode.h"
+#include "tr_vm.h"
 #include <stdio.h>
 
 void tr_chunk_disassemble(struct tr_chunk* chunk, const char* name) {
@@ -22,7 +23,7 @@ void tr_debug_print_val(struct tr_value* val) {
   }
   switch (val->type) {
   case VAL_STR:
-    printf("%s\n", val->s);
+    printf("%s\n", val->s.str);
     break;
   case VAL_LNG:
     printf("%ld\n", val->l);
@@ -30,6 +31,18 @@ void tr_debug_print_val(struct tr_value* val) {
   case VAL_DBL:
     printf("%f\n", val->d);
     break;
+  case VAL_BOOL:
+    printf("%s\n", val->b ? "true" : "false");
+    break;
+  case VAL_OBJ:
+    switch (val->obj->type) {
+    case OBJ_NULL:
+      printf("NULL\n");
+      break;
+    case OBJ_FUNC:
+      printf("<func: %s>\n", ((struct tr_func*)val->obj)->name->str);
+      break;
+    }
   }
 }
 
@@ -41,16 +54,51 @@ static int singleOperandOpcode(const char* name, struct tr_chunk* chunk, int off
   return offset + 2;
 }
 
+static int singleByteOpcode(const char* name, struct tr_chunk* chunk, int offset) {
+  printf("%s ", name);
+  printf("%03d ", chunk->instructions[offset + 1]);
+  return offset + 2;
+}
+
+static int jumpOpcode(const char* name, int sign, struct tr_chunk* chunk, int offset) {
+  uint16_t jump = (uint16_t)(chunk->instructions[offset + 1] << 8);
+  jump |= chunk->instructions[offset + 2];
+  printf("%-16s %4d -> %d\n", name, offset, offset + 3 + sign * jump);
+  return offset + 3;
+}
+
 int tr_opcode_dissasemble(struct tr_chunk* chunk, int offset) {
   printf("%04d ", offset);
   uint8_t opcode = chunk->instructions[offset];
   switch (opcode) {
   case OP_RETURN:
     return simpleOpcode("OP_RETURN", offset);
+  case OP_POP:
+    return simpleOpcode("OP_POP", offset);
   case OP_NEGATE:
     return simpleOpcode("OP_NEGATE", offset);
+  case OP_SET_LOCAL:
+    return singleByteOpcode("OP_SET_LOCAL", chunk, offset);
+  case OP_GET_LOCAL:
+    return singleByteOpcode("OP_GET_LOCAL", chunk, offset);
+  case OP_DEFINE_GLOBAL:
+    return singleOperandOpcode("OP_DEFINE_GLOBAL", chunk, offset);
+  case OP_SET_GLOBAL:
+    return singleOperandOpcode("OP_SET_GLOBAL", chunk, offset);
+  case OP_GET_GLOBAL:
+    return singleOperandOpcode("OP_GET_GLOBAL", chunk, offset);
+  case OP_JMP_FALSE:
+    return jumpOpcode("OP_JMP_FALSE", 1, chunk, offset);
+  case OP_JMP:
+    return jumpOpcode("OP_JMP", 1, chunk, offset);
+  case OP_LOOP:
+    return jumpOpcode("OP_LOOP", -1, chunk, offset);
+  case OP_EQUAL:
+    return simpleOpcode("OP_EQUAL", offset);
+  case OP_NEQUAL:
+    return simpleOpcode("OP_NEQUAL", offset);
   case OP_NO:
-    return simpleOpcode("OP_NO", offset);
+    return simpleOpcode("OP_NOP", offset);
   case OP_FALSE:
     return simpleOpcode("OP_FALSE", offset);
   case OP_TRUE:
