@@ -254,11 +254,11 @@ static uint8_t ident_constant(struct tr_parser* p, struct tr_token* name) {
 }
 
 static void add_local(struct tr_parser* p, struct tr_token name) {
-  if (p->localCount == UINT8_MAX + 1) {
+  if (p->function->locals.localCount == UINT8_MAX + 1) {
     error(p, "Too many local variables in function.");
     return;
   }
-  struct tr_local* local = &p->locals[p->localCount++];
+  struct tr_local* local = &p->function->locals.locals[p->function->locals.localCount++];
   local->name            = name;
   local->depth           = -1;
 }
@@ -270,17 +270,17 @@ static bool identifier_equals(struct tr_token* a, struct tr_token* b) {
 }
 
 static void mark_initialized(struct tr_parser* p) {
-  p->locals[p->localCount - 1].depth = p->scopeDepth;
+  p->function->locals.locals[p->function->locals.localCount - 1].depth = p->function->locals.scopeDepth;
 }
 
 static void declare_variable(struct tr_parser* p) {
-  if (p->scopeDepth == 0) {
+  if (p->function->locals.scopeDepth == 0) {
     return;
   }
   struct tr_token* name = &p->previous;
-  for (int i = p->localCount - 1; i >= 0; i--) {
-    struct tr_local* local = &p->locals[i];
-    if (local->depth != -1 && local->depth < p->scopeDepth) {
+  for (int i = p->function->locals.localCount - 1; i >= 0; i--) {
+    struct tr_local* local = &p->function->locals.locals[i];
+    if (local->depth != -1 && local->depth < p->function->locals.scopeDepth) {
       break;
     }
     if (identifier_equals(name, &local->name)) {
@@ -293,7 +293,7 @@ static void declare_variable(struct tr_parser* p) {
 static uint8_t parse_variable(struct tr_parser* p, const char* err) {
   consume(p, TOKEN_IDENT, err);
   declare_variable(p);
-  if (p->scopeDepth > 0)
+  if (p->function->locals.scopeDepth > 0)
     return 0;
   return ident_constant(p, &p->previous);
 }
@@ -306,7 +306,7 @@ static void var_declaration(struct tr_parser* p) {
     tr_chunk_add(&p->function->chunk, OP_NIL);
   }
   consume(p, TOKEN_SEMICOLON, "Expected ';' after variable declaration");
-  if (p->scopeDepth > 0) {
+  if (p->function->locals.scopeDepth > 0) {
     mark_initialized(p);
     return;
   }
@@ -315,8 +315,8 @@ static void var_declaration(struct tr_parser* p) {
 }
 
 static int resolve_local(struct tr_parser* p, struct tr_token* name) {
-  for (int i = p->localCount - 1; i >= 0; i--) {
-    struct tr_local* local = &p->locals[i];
+  for (int i = p->function->locals.localCount - 1; i >= 0; i--) {
+    struct tr_local* local = &p->function->locals.locals[i];
     if (identifier_equals(name, &local->name)) {
       if (local->depth == -1) {
         error(p, "Can't read local variable in its own initializer");
@@ -423,13 +423,13 @@ static void while_statement(struct tr_parser* p) {
   tr_chunk_add(&p->function->chunk, OP_POP);
 }
 
-static void begin_scope(struct tr_parser* p) { p->scopeDepth++; }
+static void begin_scope(struct tr_parser* p) { p->function->locals.scopeDepth++; }
 
 static void end_scope(struct tr_parser* p) {
-  p->scopeDepth--;
-  while (p->localCount > 0 && p->locals[p->localCount - 1].depth > p->scopeDepth) {
+  p->function->locals.scopeDepth--;
+  while (p->function->locals.localCount > 0 && p->function->locals.locals[p->function->locals.localCount - 1].depth > p->function->locals.scopeDepth) {
     tr_chunk_add(&p->function->chunk, OP_POP);
-    p->localCount--;
+    p->function->locals.localCount--;
   }
 }
 
@@ -570,11 +570,9 @@ static struct tr_parse_rule* tr_parser_get_rule(token_type type) { return &rules
 void tr_parser_init(struct tr_parser* p, struct tr_lexer* l) {
   p->lexer = l;
   p->error = p->panicking = false;
-  p->localCount           = 0;
-  p->scopeDepth           = 0;
   p->function             = tr_func_new();
   p->type                 = TYPE_SCRIPT;
-  struct tr_local* local  = &p->locals[p->localCount++];
+  struct tr_local* local  = &p->function->locals.locals[p->function->locals.localCount++];
   local->depth            = 0;
   local->name.start       = "";
   local->name.length      = 0;

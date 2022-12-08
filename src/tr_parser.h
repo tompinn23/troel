@@ -7,24 +7,10 @@
 
 typedef enum { TYPE_FUNC, TYPE_SCRIPT } tr_func_type;
 
-struct tr_local {
-  struct tr_token name;
-  int depth;
-};
-
-struct tr_compiler {
-  struct tr_local locals[UINT8_MAX + 1];
-  int localCount;
-  int scopeDepth;
-};
-
 struct tr_parser {
   struct tr_lexer* lexer;
   struct tr_func* function;
   tr_func_type type;
-  struct tr_local locals[UINT8_MAX + 1];
-  int localCount;
-  int scopeDepth;
   struct tr_token preprevious;
   struct tr_token previous;
   struct tr_token current;

@@ -16,12 +16,12 @@ int main(int argc, char** argv) {
     printf("Parsing failed!\n");
     return -1;
   }
-  struct tr_vm vm;
-  tr_vm_init(&vm);
-  int ret = tr_vm_do_chunk(&vm, p.function);
+  struct tr_vm* vm = tr_vm_new();
+  //tr_vm_init(&vm);
+  /*int ret = tr_vm_do_chunk(&vm, p.function);
   if (ret != TR_VM_E_OK) {
     printf("An error occurred\n");
-  }
-  tr_vm_free(&vm);
+  }*/
+  //tr_vm_free(&vm);
   return 0;
 }

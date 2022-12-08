@@ -73,6 +73,8 @@ struct tr_func* tr_func_new() {
   func->arity        = 0;
   func->name         = NULL;
   tr_chunk_init(&func->chunk);
+  func->locals.localCount = 0;
+  func->locals.scopeDepth = 0;
   return func;
 }
 
@@ -86,6 +88,12 @@ void tr_func_destroy(struct tr_object* obj) {
 }
 
 static void vm_reset_stack(struct tr_vm* vm) { vm->stackTop = vm->stack; }
+
+struct tr_vm* tr_vm_new() {
+    struct tr_vm* vm = mem_alloc(sizeof(*vm));
+    tr_vm_init(vm);
+    return vm;
+}
 
 void tr_vm_init(struct tr_vm* vm) {
   vm_reset_stack(vm);

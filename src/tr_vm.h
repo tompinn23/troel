@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#include "tr_lexer.h"
 #include "tr_obj.h"
 #include "tr_table.h"
 #include "tr_value.h"
@@ -27,9 +28,21 @@ struct tr_chunk {
   uint8_t* instructions;
 };
 
+struct tr_local {
+	struct tr_token name;
+	int depth;
+};
+
+struct tr_locals {
+	struct tr_local locals[UINT8_MAX + 1];
+	int localCount;
+	int scopeDepth;
+};
+
 struct tr_func {
   struct tr_object obj;
   int arity;
+  struct tr_locals locals;
   struct tr_chunk chunk;
   struct tr_string* name;
 };
@@ -62,6 +75,7 @@ struct tr_value* tr_constants_get(struct tr_constants* constants, int index);
 struct tr_func* tr_func_new();
 void tr_func_destroy(struct tr_object* obj);
 
+struct tr_vm* tr_vm_new();
 void tr_vm_init(struct tr_vm* vm);
 void tr_vm_free(struct tr_vm* vm);
 
