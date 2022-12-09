@@ -73,8 +73,8 @@ static void emit_constant(struct tr_parser* p, struct tr_value val) {
 }
 
 static void advance(struct tr_parser* p) {
-  if (p->preprevious != NULL) {
-    mem_free(p->preprevious);
+  if (p->preprevious.start != NULL) {
+    mem_free(p->preprevious.start);
   }
   p->preprevious = p->previous;
   p->previous    = p->current;
@@ -680,10 +680,14 @@ void tr_parser_init(struct tr_parser* p, struct tr_lexer* l) {
   p->error = p->panicking = false;
   p->function             = tr_func_new();
   p->function->type       = TYPE_SCRIPT;
-  struct tr_local* local  = &p->function->locals.locals[p->function->locals.localCount++];
-  local->depth            = 0;
-  local->name.start       = "";
-  local->name.length      = 0;
+  memset(&p->preprevious, 0, sizeof(p->preprevious));
+  memset(&p->previous, 0, sizeof(p->current));
+  memset(&p->current, 0, sizeof(p->current));
+
+  struct tr_local* local = &p->function->locals.locals[p->function->locals.localCount++];
+  local->depth           = 0;
+  local->name.start      = "";
+  local->name.length     = 0;
 }
 
 bool tr_parser_compile(struct tr_parser* parser) {

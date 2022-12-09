@@ -9,8 +9,8 @@ static bool is_eof(struct tr_lexer* l) { return *l->current == '\0'; }
 static struct tr_token make_token(struct tr_lexer* l, token_type type) {
   struct tr_token tok;
   tok.type   = type;
-  tok.start  = l->start;
   tok.length = (int)(l->current - l->start);
+  tok.start  = mem_strndup(l->current, tok.length);
   tok.line   = l->line;
   return tok;
 }
@@ -158,9 +158,16 @@ void tr_lexer_init(struct tr_lexer* lex) {
 
 struct str_data {
   const char* source;
-  int current;
-  int max;
+  char* current;
 };
+
+static int getc(struct tr_lexer* l) {
+  struct str_data* s = l->user;
+  if (s->current != '\0') {
+    return s->current++;
+  }
+  return '\0';
+}
 
 void tr_lexer_str_init(struct tr_lexer* lex, const char* string) {
   tr_lexer_init(lex);

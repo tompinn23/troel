@@ -57,19 +57,22 @@ typedef enum {
 
 struct tr_token {
   token_type type;
-  const char* start;
+  char* start;
   int length;
   int line;
 };
 
 struct tr_lexer {
   char* source;
+  int size;
+  int capacity;
   const char* start;
   const char* current;
   int line;
 
   int (*getc)(struct tr_lexer* l);
   int (*peekc)(struct tr_lexer* l);
+  int (*eof)(struct tr_lexer* l);
   void* user;
 };
 
