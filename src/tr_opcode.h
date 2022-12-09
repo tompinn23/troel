@@ -17,6 +17,7 @@ enum {
   OP_NIL,
   OP_TRUE,
   OP_FALSE,
+  OP_CALL,
   OP_LOOP,
   OP_JMP_FALSE,
   OP_JMP,

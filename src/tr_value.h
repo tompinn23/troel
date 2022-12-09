@@ -5,7 +5,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-enum { VAL_NIL, VAL_STR, VAL_LNG, VAL_DBL, VAL_PTR, VAL_BOOL, VAL_OBJ };
+struct tr_vm;
+struct tr_value;
+typedef struct tr_value (*tr_cfunc)(struct tr_vm* vm, int args, struct tr_value* vals);
+
+enum { VAL_NIL, VAL_STR, VAL_LNG, VAL_DBL, VAL_PTR, VAL_BOOL, VAL_CFUNC, VAL_OBJ };
 
 struct tr_string {
   char* str;
@@ -21,8 +25,14 @@ struct tr_value {
     double d;
     void* p;
     struct tr_object* obj;
+    tr_cfunc func;
   };
 };
+
+#define OBJ_VALUE(val)                                                                             \
+  (struct tr_value) { .type = VAL_OBJ, .obj = (struct tr_object*)val }
+#define INT_VALUE(val)                                                                             \
+  (struct tr_value) { .type = VAL_LNG, .l = val }
 
 #define NIL_VAL                                                                                    \
   (struct tr_value) { .type = VAL_NIL }
@@ -66,6 +76,8 @@ inline bool tr_value_eq(struct tr_value a, struct tr_value b) {
 void tr_string_cpy(struct tr_string* s, const char* str);
 void tr_string_ncpy(struct tr_string* s, const char* str, int len);
 void tr_string_new(struct tr_string* s, int capacity);
+struct tr_string* tr_string_new_cpy(struct tr_string* s);
+struct tr_string* tr_string_new_ncpy(const char* str, int len);
 void tr_string_free(struct tr_string* s);
 void tr_string_hash(struct tr_string* s);
 #endif

@@ -79,7 +79,7 @@ bool tr_table_insert(struct tr_table* t, struct tr_string* s, struct tr_value va
   bool newKey                = entry->key == NULL;
   if (newKey && entry->value.type == VAL_NIL)
     t->count++;
-  entry->key   = s;
+  entry->key   = tr_string_new_cpy(s);
   entry->value = val;
   return newKey;
 }
@@ -100,6 +100,7 @@ bool tr_table_delete(struct tr_table* t, struct tr_string* s) {
   struct tr_tbl_entry* entry = tr_table_find_entry(t->entries, t->capacity, s);
   if (entry->key == NULL)
     return false;
+  tr_string_free(entry->key);
   entry->key   = NULL;
   entry->value = (struct tr_value){.type = VAL_LNG, .l = 0xdeadbeef};
   return true;

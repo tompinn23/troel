@@ -73,6 +73,9 @@ static void emit_constant(struct tr_parser* p, struct tr_value val) {
 }
 
 static void advance(struct tr_parser* p) {
+  if (p->preprevious != NULL) {
+    mem_free(p->preprevious);
+  }
   p->preprevious = p->previous;
   p->previous    = p->current;
   for (;;) {
@@ -270,7 +273,10 @@ static bool identifier_equals(struct tr_token* a, struct tr_token* b) {
 }
 
 static void mark_initialized(struct tr_parser* p) {
-  p->function->locals.locals[p->function->locals.localCount - 1].depth = p->function->locals.scopeDepth;
+  if (p->function->locals.scopeDepth == 0)
+    return;
+  p->function->locals.locals[p->function->locals.localCount - 1].depth =
+      p->function->locals.scopeDepth;
 }
 
 static void declare_variable(struct tr_parser* p) {
@@ -298,6 +304,15 @@ static uint8_t parse_variable(struct tr_parser* p, const char* err) {
   return ident_constant(p, &p->previous);
 }
 
+static void define_global(struct tr_parser* p, uint8_t global) {
+  if (p->function->locals.scopeDepth > 0) {
+    mark_initialized(p);
+    return;
+  }
+  tr_chunk_add(&p->function->chunk, OP_DEFINE_GLOBAL);
+  tr_chunk_add(&p->function->chunk, global);
+}
+
 static void var_declaration(struct tr_parser* p) {
   uint8_t global = parse_variable(p, "Expected a variable name.");
   if (match(p, TOKEN_ASSIGN)) {
@@ -306,12 +321,7 @@ static void var_declaration(struct tr_parser* p) {
     tr_chunk_add(&p->function->chunk, OP_NIL);
   }
   consume(p, TOKEN_SEMICOLON, "Expected ';' after variable declaration");
-  if (p->function->locals.scopeDepth > 0) {
-    mark_initialized(p);
-    return;
-  }
-  tr_chunk_add(&p->function->chunk, OP_DEFINE_GLOBAL);
-  tr_chunk_add(&p->function->chunk, global);
+  define_global(p, global);
 }
 
 static int resolve_local(struct tr_parser* p, struct tr_token* name) {
@@ -427,7 +437,9 @@ static void begin_scope(struct tr_parser* p) { p->function->locals.scopeDepth++;
 
 static void end_scope(struct tr_parser* p) {
   p->function->locals.scopeDepth--;
-  while (p->function->locals.localCount > 0 && p->function->locals.locals[p->function->locals.localCount - 1].depth > p->function->locals.scopeDepth) {
+  while (p->function->locals.localCount > 0 &&
+         p->function->locals.locals[p->function->locals.localCount - 1].depth >
+             p->function->locals.scopeDepth) {
     tr_chunk_add(&p->function->chunk, OP_POP);
     p->function->locals.localCount--;
   }
@@ -471,20 +483,29 @@ static void for_statement(struct tr_parser* p) {
   end_scope(p);
 }
 
-static void declaration(struct tr_parser* p) {
-  if (match(p, TOKEN_VAR)) {
-    var_declaration(p);
-  } else if (match(p, TOKEN_FOR)) {
-    for_statement(p);
-  } else if (match(p, TOKEN_IF)) {
-    if_statement(p);
-  } else if (match(p, TOKEN_WHILE)) {
-    while_statement(p);
-  } else {
-    statement(p);
+static void parser_init_func(struct tr_parser* p, struct tr_func* new, int fn_type) {
+  new->enclosing = p->function;
+  p->function    = NULL;
+  p->type        = fn_type;
+  p->function    = new;
+  if (fn_type != TYPE_SCRIPT) {
+    p->function->name = tr_string_new_ncpy(p->previous.start, p->previous.length);
   }
-  if (p->panicking)
-    synchronize(p);
+  struct tr_local* local = &p->function->locals.locals[p->function->locals.localCount++];
+  local->depth           = 0;
+  // local->isCaptured      = 0;
+}
+
+static void parser_end_func(struct tr_parser* p) {
+  tr_chunk_add(&p->function->chunk, OP_NIL);
+  tr_chunk_add(&p->function->chunk, OP_RETURN);
+#ifdef DEBUG_PRINT_CODE
+  if (!p->error) {
+    tr_chunk_disassemble(&p->function->chunk,
+                         p->function->name != NULL ? p->function->name->chars : "<script>");
+  }
+#endif
+  p->function = p->function->enclosing;
 }
 
 static void block(struct tr_parser* p) {
@@ -492,6 +513,93 @@ static void block(struct tr_parser* p) {
     declaration(p);
   }
   consume(p, TOKEN_R_BRACE, "Expected } after block.");
+}
+
+static void function(struct tr_parser* p, int function_type) {
+  struct tr_func* func = tr_func_new();
+  parser_init_func(p, func, function_type);
+  begin_scope(p);
+  consume(p, TOKEN_L_PAREN, "Expected ( after function name");
+  if (!check(p, TOKEN_R_PAREN)) {
+    do {
+      p->function->arity++;
+      if (p->function->arity > 255) {
+        error_current(p, "Can't have more than 255 parameters, you mad man.");
+      }
+      uint8_t constant = parse_variable(p, "Expect parameter name");
+      define_global(p, constant);
+    } while (match(p, TOKEN_COMMA));
+  }
+  consume(p, TOKEN_R_PAREN, "Expected ) after function name");
+  consume(p, TOKEN_L_BRACE, "Expected  { before function body");
+  block(p);
+  parser_end_func(p);
+  emit_constant(p, OBJ_VALUE(func));
+}
+
+static void func_declaration(struct tr_parser* p) {
+  uint8_t global = parse_variable(p, "Expected function name");
+  mark_initialized(p);
+  function(p, TYPE_FUNC);
+  define_global(p, global);
+}
+
+static uint8_t argument_list(struct tr_parser* p) {
+  uint8_t count = 0;
+  if (!check(p, TOKEN_R_PAREN)) {
+    do {
+      expression(p);
+      if (count == 255) {
+        error(p, "Can't have more than 255 arguments");
+      }
+      count++;
+    } while (match(p, TOKEN_COMMA));
+  }
+  consume(p, TOKEN_R_PAREN, "Expected ')' after arguments.");
+  return count;
+}
+
+static void call(struct tr_parser* p, bool ca) {
+  uint8_t arg_count = argument_list(p);
+  tr_chunk_add(&p->function->chunk, OP_CALL);
+  tr_chunk_add(&p->function->chunk, arg_count);
+}
+
+static void emit_return(struct tr_parser* p) {
+  tr_chunk_add(&p->function->chunk, OP_NIL);
+  tr_chunk_add(&p->function->chunk, OP_RETURN);
+}
+
+static void return_statement(struct tr_parser* p) {
+  if (p->function->type == TYPE_SCRIPT) {
+    error(p, "Can't return from the script lol");
+  }
+  if (match(p, TOKEN_SEMICOLON)) {
+    emit_return(p);
+  } else {
+    expression(p);
+    consume(p, TOKEN_SEMICOLON, "Expected ; after return val");
+    tr_chunk_add(&p->function->chunk, OP_RETURN);
+  }
+}
+static void declaration(struct tr_parser* p) {
+  if (match(p, TOKEN_FUNC)) {
+    func_declaration(p);
+  } else if (match(p, TOKEN_VAR)) {
+    var_declaration(p);
+  } else if (match(p, TOKEN_FOR)) {
+    for_statement(p);
+  } else if (match(p, TOKEN_IF)) {
+    if_statement(p);
+  } else if (match(p, TOKEN_RETURN)) {
+    return_statement(p);
+  } else if (match(p, TOKEN_WHILE)) {
+    while_statement(p);
+  } else {
+    statement(p);
+  }
+  if (p->panicking)
+    synchronize(p);
 }
 
 static void statement(struct tr_parser* p) {
@@ -522,7 +630,7 @@ static void or_(struct tr_parser* p, bool ca) {
 }
 
 static struct tr_parse_rule rules[] = {
-    [TOKEN_L_PAREN]   = {grouping, NULL,   PREC_NONE  },
+    [TOKEN_L_PAREN]   = {grouping, call,   PREC_CALL  },
     [TOKEN_R_PAREN]   = {NULL,     NULL,   PREC_NONE  },
     [TOKEN_L_BRACE]   = {NULL,     NULL,   PREC_NONE  },
     [TOKEN_R_BRACE]   = {NULL,     NULL,   PREC_NONE  },
@@ -571,7 +679,7 @@ void tr_parser_init(struct tr_parser* p, struct tr_lexer* l) {
   p->lexer = l;
   p->error = p->panicking = false;
   p->function             = tr_func_new();
-  p->type                 = TYPE_SCRIPT;
+  p->function->type       = TYPE_SCRIPT;
   struct tr_local* local  = &p->function->locals.locals[p->function->locals.localCount++];
   local->depth            = 0;
   local->name.start       = "";
@@ -583,6 +691,7 @@ bool tr_parser_compile(struct tr_parser* parser) {
   while (!match(parser, TOKEN_EOF)) {
     declaration(parser);
   }
+  tr_chunk_add(&parser->function->chunk, OP_NIL);
   tr_chunk_add(&parser->function->chunk, OP_RETURN);
 #ifdef DEBUG_PRINT_CODE
   if (!parser.error) {

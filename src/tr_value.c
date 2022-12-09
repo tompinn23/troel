@@ -22,6 +22,22 @@ void tr_string_new(struct tr_string* s, int capacity) {
   s->hash = 0;
 }
 
+struct tr_string* tr_string_new_ncpy(const char* str, int len) {
+  struct tr_string* n = mem_alloc(sizeof(*n));
+  n->str              = mem_strndup(str, len);
+  tr_string_hash(n);
+  return n;
+}
+
+struct tr_string* tr_string_new_cpy(struct tr_string* s) {
+  if (s == NULL)
+    return NULL;
+  struct tr_string* ret = mem_alloc(sizeof(*ret));
+  ret->str              = mem_strdup(s->str);
+  ret->hash             = s->hash;
+  return ret;
+}
+
 void tr_string_free(struct tr_string* s) { mem_free(s->str); }
 
 uint32_t tr_string__hash(const char* key, uint32_t len, uint32_t seed) {

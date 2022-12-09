@@ -8,10 +8,10 @@ typedef enum {
 
 struct tr_object {
   tr_obj_type type;
-  void (*destruct)(struct tr_object* object);
+  void (*destruct)(struct tr_object *object);
 };
 
-void tr_object_init(struct tr_object* obj);
-void tr_object_destroy(struct tr_object* obj);
+void tr_object_init(struct tr_object *obj);
+void tr_object_destroy(struct tr_object *obj);
 
 #endif

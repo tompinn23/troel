@@ -29,22 +29,26 @@ struct tr_chunk {
 };
 
 struct tr_local {
-	struct tr_token name;
-	int depth;
+  struct tr_token name;
+  int depth;
 };
 
 struct tr_locals {
-	struct tr_local locals[UINT8_MAX + 1];
-	int localCount;
-	int scopeDepth;
+  struct tr_local locals[UINT8_MAX + 1];
+  int localCount;
+  int scopeDepth;
 };
+
+typedef enum { TYPE_SCRIPT, TYPE_FUNC } tr_func_type;
 
 struct tr_func {
   struct tr_object obj;
   int arity;
+  int type;
   struct tr_locals locals;
   struct tr_chunk chunk;
   struct tr_string* name;
+  struct tr_func* enclosing;
 };
 
 struct tr_call_frame {
@@ -63,6 +67,8 @@ struct tr_vm {
   int frame_count;
 };
 
+typedef struct tr_value (*tr_cfunc)(struct tr_vm* vm, int args, struct tr_value* vals);
+
 void tr_chunk_init(struct tr_chunk* chunk);
 void tr_chunk_free(struct tr_chunk* chunk);
 void tr_chunk_add(struct tr_chunk* chunk, uint8_t instruction);
@@ -78,6 +84,8 @@ void tr_func_destroy(struct tr_object* obj);
 struct tr_vm* tr_vm_new();
 void tr_vm_init(struct tr_vm* vm);
 void tr_vm_free(struct tr_vm* vm);
+
+void tr_vm_add_cfunc(struct tr_vm* vm, const char* s, tr_cfunc func);
 
 void tr_vm_push(struct tr_vm* vm, struct tr_value val);
 struct tr_value tr_vm_pop(struct tr_vm* vm);

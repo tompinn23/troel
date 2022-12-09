@@ -5,10 +5,9 @@
 #include "tr_vm.h"
 #include <stdbool.h>
 
-typedef enum { TYPE_FUNC, TYPE_SCRIPT } tr_func_type;
-
 struct tr_parser {
   struct tr_lexer* lexer;
+  struct tr_func* enclosing;
   struct tr_func* function;
   tr_func_type type;
   struct tr_token preprevious;

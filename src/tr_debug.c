@@ -16,33 +16,69 @@ static int simpleOpcode(const char* name, int offset) {
   return offset + 1;
 }
 
-void tr_debug_print_val(struct tr_value* val) {
+void tr_debug_print_val(struct tr_value* val, char* buf, int len) {
   if (!val) {
-    printf("Invalid\n");
+    snprintf(buf, len, "Invalid");
     return;
   }
   switch (val->type) {
   case VAL_STR:
-    printf("%s\n", val->s.str);
+    snprintf(buf, len, "%s", val->s.str);
     break;
   case VAL_LNG:
-    printf("%ld\n", val->l);
+    snprintf(buf, len, "%ld", val->l);
     break;
   case VAL_DBL:
-    printf("%f\n", val->d);
+    snprintf(buf, len, "%f", val->d);
     break;
   case VAL_BOOL:
-    printf("%s\n", val->b ? "true" : "false");
+    snprintf(buf, len, "%s", val->b ? "true" : "false");
+    break;
+  case VAL_CFUNC:
+    snprintf(buf, len, "<%p>", val->func);
     break;
   case VAL_OBJ:
     switch (val->obj->type) {
     case OBJ_NULL:
-      printf("NULL\n");
+      snprintf(buf, len, "NULL");
       break;
-    case OBJ_FUNC:
-      printf("<func: %s>\n", ((struct tr_func*)val->obj)->name->str);
+    case OBJ_FUNC: {
+      struct tr_func* fn = (struct tr_func*)val->obj;
+      snprintf(buf, len, "<func: %s>", fn->name != NULL ? fn->name->str : "script");
       break;
     }
+    }
+    break;
+  default:
+    snprintf(buf, len, "Forgot to implement debugging for this type");
+  }
+}
+
+const char* tr_debug_value_type(struct tr_value* val) {
+  switch (val->type) {
+  case VAL_BOOL:
+    return "bool";
+  case VAL_DBL:
+    return "double";
+  case VAL_LNG:
+    return "long";
+  case VAL_NIL:
+    return "nil";
+  case VAL_STR:
+    return "string";
+  case VAL_PTR:
+    return "pointer";
+  case VAL_CFUNC:
+    return "cfunc<??>";
+  case VAL_OBJ:
+    switch (val->obj->type) {
+    case OBJ_FUNC:
+      return "object<func>";
+    case OBJ_NULL:
+      return "object<null>";
+    }
+  default:
+    return "unknown";
   }
 }
 
@@ -50,7 +86,9 @@ static int singleOperandOpcode(const char* name, struct tr_chunk* chunk, int off
   printf("%s ", name);
   printf("%03d ", chunk->instructions[offset + 1]);
   struct tr_value* val = tr_constants_get(&chunk->constants, chunk->instructions[offset + 1]);
-  tr_debug_print_val(val);
+  char buf[128];
+  tr_debug_print_val(val, buf, sizeof(buf));
+  printf("%s\n", buf);
   return offset + 2;
 }
 
@@ -71,6 +109,8 @@ int tr_opcode_dissasemble(struct tr_chunk* chunk, int offset) {
   printf("%04d ", offset);
   uint8_t opcode = chunk->instructions[offset];
   switch (opcode) {
+  case OP_NIL:
+    return simpleOpcode("OP_NIL", offset);
   case OP_RETURN:
     return simpleOpcode("OP_RETURN", offset);
   case OP_POP:
@@ -93,6 +133,8 @@ int tr_opcode_dissasemble(struct tr_chunk* chunk, int offset) {
     return jumpOpcode("OP_JMP", 1, chunk, offset);
   case OP_LOOP:
     return jumpOpcode("OP_LOOP", -1, chunk, offset);
+  case OP_CALL:
+    return simpleOpcode("OP_CALL", offset);
   case OP_EQUAL:
     return simpleOpcode("OP_EQUAL", offset);
   case OP_NEQUAL:
@@ -122,7 +164,7 @@ int tr_opcode_dissasemble(struct tr_chunk* chunk, int offset) {
   case OP_CONSTANT:
     return singleOperandOpcode("OP_CONSTANT", chunk, offset);
   default:
-    printf("Unknown: %x\n", opcode);
+    printf("Unknown: %03d\n", opcode);
     return offset + 1;
   }
 }
