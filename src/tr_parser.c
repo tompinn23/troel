@@ -62,14 +62,18 @@ static void error_current(struct tr_parser* p, const char* message) {
 }
 static void error(struct tr_parser* p, const char* message) { error_at(p, &p->previous, message); }
 
+static void emit_opcode(struct tr_parser* p, uint8_t opcode) {
+  tr_chunk_add(&p->compiler->function->chunk, opcode);
+}
+
 static int emit_constant(struct tr_parser* p, struct tr_value val) {
-  int id = tr_constants_add(&p->function->chunk.constants, val);
+  int id = tr_constants_add(&p->compiler->function->chunk.constants, val);
   if (id > UINT8_MAX) {
     error(p, "Too many constants in one chunk (function, etc.)");
     id = 0;
   }
-  tr_chunk_add(&p->function->chunk, OP_CONSTANT);
-  tr_chunk_add(&p->function->chunk, id);
+  emit_opcode(p, OP_CONSTANT);
+  emit_opcode(p, id);
   return id;
 }
 
@@ -142,10 +146,10 @@ static void unary(struct tr_parser* p, bool canAssign) {
   precedence(p, PREC_UNARY);
   switch (type) {
   case TOKEN_EXCL:
-    tr_chunk_add(&p->function->chunk, OP_NOT);
+    emit_opcode(p, OP_NOT);
     break;
   case TOKEN_MINUS:
-    tr_chunk_add(&p->function->chunk, OP_NEGATE);
+    emit_opcode(p, OP_NEGATE);
     break;
   default:
     return;
@@ -161,34 +165,34 @@ static void binary(struct tr_parser* p, bool canAssign) {
   bool floating = p->previous.type == TOKEN_NUMBER || left_hand == TOKEN_NUMBER;
   switch (type) {
   case TOKEN_EQ:
-    tr_chunk_add(&p->function->chunk, OP_EQUAL);
+    emit_opcode(p, OP_EQUAL);
     break;
   case TOKEN_NE:
-    tr_chunk_add(&p->function->chunk, OP_NEQUAL);
+    emit_opcode(p, OP_NEQUAL);
     break;
   case TOKEN_GT:
-    tr_chunk_add(&p->function->chunk, OP_GT);
+    emit_opcode(p, OP_GT);
     break;
   case TOKEN_GTEQ:
-    tr_chunk_add(&p->function->chunk, OP_GTEQ);
+    emit_opcode(p, OP_GTEQ);
     break;
   case TOKEN_LT:
-    tr_chunk_add(&p->function->chunk, OP_LT);
+    emit_opcode(p, OP_LT);
     break;
   case TOKEN_LTEQ:
-    tr_chunk_add(&p->function->chunk, OP_LTEQ);
+    emit_opcode(p, OP_LTEQ);
     break;
   case TOKEN_PLUS:
-    tr_chunk_add(&p->function->chunk, floating ? OP_FADD : OP_IADD);
+    emit_opcode(p, floating ? OP_FADD : OP_IADD);
     break;
   case TOKEN_MINUS:
-    tr_chunk_add(&p->function->chunk, floating ? OP_FSUB : OP_ISUB);
+    emit_opcode(p, floating ? OP_FSUB : OP_ISUB);
     break;
   case TOKEN_STAR:
-    tr_chunk_add(&p->function->chunk, floating ? OP_FMUL : OP_IMUL);
+    emit_opcode(p, floating ? OP_FMUL : OP_IMUL);
     break;
   case TOKEN_SLASH:
-    tr_chunk_add(&p->function->chunk, floating ? OP_FDIV : OP_IDIV);
+    emit_opcode(p, floating ? OP_FDIV : OP_IDIV);
     break;
   default:
     return;
@@ -209,10 +213,10 @@ static void string(struct tr_parser* p, bool canAssign) {
 static void literal(struct tr_parser* p, bool canAssign) {
   switch (p->previous.type) {
   case TOKEN_FALSE:
-    tr_chunk_add(&p->function->chunk, OP_FALSE);
+    emit_opcode(p, OP_FALSE);
     break;
   case TOKEN_TRUE:
-    tr_chunk_add(&p->function->chunk, OP_TRUE);
+    emit_opcode(p, OP_TRUE);
     break;
   default:
     return;
@@ -242,14 +246,14 @@ static void synchronize(struct tr_parser* p) {
 static void expression_statement(struct tr_parser* p) {
   expression(p);
   consume(p, TOKEN_SEMICOLON, "Expecting a ';' after expression.");
-  tr_chunk_add(&p->function->chunk, OP_POP);
+  emit_opcode(p, OP_POP);
 }
 
 static uint8_t ident_constant(struct tr_parser* p, struct tr_token* name) {
   struct tr_string s;
   tr_string_ncpy(&s, name->start, name->length);
-  int id =
-      tr_constants_add(&p->function->chunk.constants, (struct tr_value){.type = VAL_STR, .s = s});
+  int id = tr_constants_add(&p->compiler->function->chunk.constants,
+                            (struct tr_value){.type = VAL_STR, .s = s});
   if (id > UINT8_MAX) {
     error(p, "Too many constants in one chunk (function, etc.)");
     id = 0;
@@ -258,11 +262,11 @@ static uint8_t ident_constant(struct tr_parser* p, struct tr_token* name) {
 }
 
 static void add_local(struct tr_parser* p, struct tr_token name) {
-  if (p->function->locals.localCount == UINT8_MAX + 1) {
+  if (p->compiler->local_count == UINT8_MAX + 1) {
     error(p, "Too many local variables in function.");
     return;
   }
-  struct tr_local* local = &p->function->locals.locals[p->function->locals.localCount++];
+  struct tr_local* local = &p->compiler->locals[p->compiler->local_count++];
   local->name            = tr_token_cpy(name);
   local->depth           = -1;
 }
@@ -274,20 +278,19 @@ static bool identifier_equals(struct tr_token* a, struct tr_token* b) {
 }
 
 static void mark_initialized(struct tr_parser* p) {
-  if (p->function->locals.scopeDepth == 0)
+  if (p->compiler->scope_depth == 0)
     return;
-  p->function->locals.locals[p->function->locals.localCount - 1].depth =
-      p->function->locals.scopeDepth;
+  p->compiler->locals[p->compiler->local_count - 1].depth = p->compiler->scope_depth;
 }
 
 static void declare_variable(struct tr_parser* p) {
-  if (p->function->locals.scopeDepth == 0) {
+  if (p->compiler->scope_depth == 0) {
     return;
   }
   struct tr_token* name = &p->previous;
-  for (int i = p->function->locals.localCount - 1; i >= 0; i--) {
-    struct tr_local* local = &p->function->locals.locals[i];
-    if (local->depth != -1 && local->depth < p->function->locals.scopeDepth) {
+  for (int i = p->compiler->local_count - 1; i >= 0; i--) {
+    struct tr_local* local = &p->compiler->locals[i];
+    if (local->depth != -1 && local->depth < p->compiler->scope_depth) {
       break;
     }
     if (identifier_equals(name, &local->name)) {
@@ -300,18 +303,18 @@ static void declare_variable(struct tr_parser* p) {
 static uint8_t parse_variable(struct tr_parser* p, const char* err) {
   consume(p, TOKEN_IDENT, err);
   declare_variable(p);
-  if (p->function->locals.scopeDepth > 0)
+  if (p->compiler->scope_depth > 0)
     return 0;
   return ident_constant(p, &p->previous);
 }
 
 static void define_global(struct tr_parser* p, uint8_t global) {
-  if (p->function->locals.scopeDepth > 0) {
+  if (p->compiler->scope_depth > 0) {
     mark_initialized(p);
     return;
   }
-  tr_chunk_add(&p->function->chunk, OP_DEFINE_GLOBAL);
-  tr_chunk_add(&p->function->chunk, global);
+  emit_opcode(p, OP_DEFINE_GLOBAL);
+  emit_opcode(p, global);
 }
 
 static void var_declaration(struct tr_parser* p) {
@@ -319,15 +322,15 @@ static void var_declaration(struct tr_parser* p) {
   if (match(p, TOKEN_ASSIGN)) {
     expression(p);
   } else {
-    tr_chunk_add(&p->function->chunk, OP_NIL);
+    emit_opcode(p, OP_NIL);
   }
   consume(p, TOKEN_SEMICOLON, "Expected ';' after variable declaration");
   define_global(p, global);
 }
 
-static int resolve_local_up(struct tr_parser* p, struct tr_func* f, struct tr_token* name) {
-  for (int i = f->locals.localCount - 1; i >= 0; i--) {
-    struct tr_local* local = &f->locals.locals[i];
+static int resolve_local_up(struct tr_parser* p, struct tr_compiler* c, struct tr_token* name) {
+  for (int i = c->local_count - 1; i >= 0; i--) {
+    struct tr_local* local = &c->locals[i];
     if (identifier_equals(name, &local->name)) {
       if (local->depth == -1) {
         error(p, "Can't read local variable in its own initializer");
@@ -339,20 +342,25 @@ static int resolve_local_up(struct tr_parser* p, struct tr_func* f, struct tr_to
 }
 
 static int resolve_local(struct tr_parser* p, struct tr_token* name) {
-  return resolve_local_up(p, p->function, name);
+  return resolve_local_up(p, p->compiler, name);
 }
 
-static int add_upvalue(struct tr_func* p, uint8_t local, bool isLocal) {
-  int upvalue_count = p->upvalue_count;
-
+static int add_upvalue(struct tr_compiler* c, uint8_t index, bool isLocal) {
+  for (int i = 0; i < c->function->upvalue_count; i++) {
+    struct tr_upvalue* v = &c->upvalues[i];
+    if (v->index == index && v->is_local == isLocal)
+      return i;
+  }
+  c->upvalues[c->function->upvalue_count++] = (struct tr_upvalue){isLocal, index};
+  return c->function->upvalue_count;
 }
 
 static int resolve_upvalue(struct tr_parser* p, struct tr_token* name) {
-  if (p->enclosing == NULL)
+  if (p->compiler->enclosing == NULL)
     return -1;
-  int local = resolve_local_up(p, p->enclosing, name);
+  int local = resolve_local_up(p, p->compiler->enclosing, name);
   if (local != -1) {
-    return add_upvalue(p->function, (uint8_t)local, true);
+    return add_upvalue(p->compiler, (uint8_t)local, true);
   }
   return -1;
 }
@@ -373,11 +381,11 @@ static void variable(struct tr_parser* p, bool canAssign) {
   }
   if (canAssign && match(p, TOKEN_ASSIGN)) {
     expression(p);
-    tr_chunk_add(&p->function->chunk, set_op);
+    emit_opcode(p, set_op);
   } else {
-    tr_chunk_add(&p->function->chunk, get_op);
+    emit_opcode(p, get_op);
   }
-  tr_chunk_add(&p->function->chunk, arg);
+  emit_opcode(p, arg);
 }
 
 // static void typed_declaration(struct tr_parser* p) {
@@ -396,27 +404,27 @@ static void variable(struct tr_parser* p, bool canAssign) {
 //   if (match(p, TOKEN_ASSIGN)) {
 //     expression(p);
 //   } else {
-//     tr_chunk_add(&p->function->chunk, OP_NIL);
+//     emit_opcode(p, OP_NIL);
 //   }
 //   consume(p, TOKEN_SEMICOLON, "Expected ';' after variable declaration");
-//   tr_chunk_add(&p->function->chunk, OP_DEFINE_GLOBAL);
-//   tr_chunk_add(&p->function->chunk, local);
+//   emit_opcode(p, OP_DEFINE_GLOBAL);
+//   emit_opcode(p, local);
 // }
 
 static void patch_jump(struct tr_parser* p, int jump) {
-  int j = p->function->chunk.count - jump - 2;
+  int j = p->compiler->function->chunk.count - jump - 2;
   if (j > UINT16_MAX) {
     error(p, "Too much code to jump");
   }
-  p->function->chunk.instructions[jump]     = (j >> 8) & 0xff;
-  p->function->chunk.instructions[jump + 1] = j & 0xff;
+  p->compiler->function->chunk.instructions[jump]     = (j >> 8) & 0xff;
+  p->compiler->function->chunk.instructions[jump + 1] = j & 0xff;
 }
 
 static int emit_jump(struct tr_parser* p, int opcode) {
-  tr_chunk_add(&p->function->chunk, opcode);
-  tr_chunk_add(&p->function->chunk, 0xff);
-  tr_chunk_add(&p->function->chunk, 0xff);
-  return p->function->chunk.count - 2;
+  emit_opcode(p, opcode);
+  emit_opcode(p, 0xff);
+  emit_opcode(p, 0xff);
+  return p->compiler->function->chunk.count - 2;
 }
 
 static void if_statement(struct tr_parser* p) {
@@ -424,47 +432,47 @@ static void if_statement(struct tr_parser* p) {
   expression(p);
   consume(p, TOKEN_R_PAREN, "Expected ')' after condition");
   int jump = emit_jump(p, OP_JMP_FALSE);
-  tr_chunk_add(&p->function->chunk, OP_POP);
+  emit_opcode(p, OP_POP);
   statement(p);
   int else_jump = emit_jump(p, OP_JMP);
   patch_jump(p, jump);
-  tr_chunk_add(&p->function->chunk, OP_POP);
+  emit_opcode(p, OP_POP);
   if (match(p, TOKEN_ELSE))
     statement(p);
   patch_jump(p, else_jump);
 }
 
 static void emit_loop(struct tr_parser* p, int loop_start) {
-  tr_chunk_add(&p->function->chunk, OP_LOOP);
-  int offset = p->function->chunk.count - loop_start + 2;
+  emit_opcode(p, OP_LOOP);
+  int offset = p->compiler->function->chunk.count - loop_start + 2;
   if (offset > UINT16_MAX)
     error(p, "loop body too large.");
-  tr_chunk_add(&p->function->chunk, (offset >> 8) & 0xFF);
-  tr_chunk_add(&p->function->chunk, offset & 0xFF);
+  emit_opcode(p, (offset >> 8) & 0xFF);
+  emit_opcode(p, offset & 0xFF);
 }
 
 static void while_statement(struct tr_parser* p) {
-  int loop_start = p->function->chunk.count;
+  int loop_start = p->compiler->function->chunk.count;
   consume(p, TOKEN_L_PAREN, "Expecting '(' after while.");
   expression(p);
   consume(p, TOKEN_R_PAREN, "Expecting ')' after expression.");
   int exit_jump = emit_jump(p, OP_JMP_FALSE);
-  tr_chunk_add(&p->function->chunk, OP_POP);
+  emit_opcode(p, OP_POP);
   statement(p);
   emit_loop(p, loop_start);
   patch_jump(p, exit_jump);
-  tr_chunk_add(&p->function->chunk, OP_POP);
+  emit_opcode(p, OP_POP);
 }
 
-static void begin_scope(struct tr_parser* p) { p->function->locals.scopeDepth++; }
+static void begin_scope(struct tr_parser* p) { p->compiler->function->locals.scopeDepth++; }
 
 static void end_scope(struct tr_parser* p) {
-  p->function->locals.scopeDepth--;
-  while (p->function->locals.localCount > 0 &&
-         p->function->locals.locals[p->function->locals.localCount - 1].depth >
-             p->function->locals.scopeDepth) {
-    tr_chunk_add(&p->function->chunk, OP_POP);
-    p->function->locals.localCount--;
+  p->compiler->function->locals.scopeDepth--;
+  while (p->compiler->function->locals.local_count > 0 &&
+         p->compiler->function->locals.locals[p->function->locals.local_count - 1].depth >
+             p->compiler->function->locals.scopeDepth) {
+    emit_opcode(p, OP_POP);
+    p->compiler->function->locals.local_count--;
   }
 }
 
@@ -478,19 +486,19 @@ static void for_statement(struct tr_parser* p) {
   } else {
     expression_statement(p);
   }
-  int loop_start = p->function->chunk.count;
+  int loop_start = p->compiler->function->chunk.count;
   int exit_jump  = -1;
   if (!match(p, TOKEN_SEMICOLON)) {
     expression(p);
     consume(p, TOKEN_SEMICOLON, "Expect ';' after loop condition.");
     exit_jump = emit_jump(p, OP_JMP_FALSE);
-    tr_chunk_add(&p->function->chunk, OP_POP);
+    emit_opcode(p, OP_POP);
   }
   if (!match(p, TOKEN_R_PAREN)) {
     int body_jump       = emit_jump(p, OP_JMP);
-    int increment_start = p->function->chunk.count;
+    int increment_start = p->compiler->function->chunk.count;
     expression(p);
-    tr_chunk_add(&p->function->chunk, OP_POP);
+    emit_opcode(p, OP_POP);
     consume(p, TOKEN_R_PAREN, "Expect ')' after for clauses.");
 
     emit_loop(p, loop_start);
@@ -501,34 +509,34 @@ static void for_statement(struct tr_parser* p) {
   emit_loop(p, loop_start);
   if (exit_jump != -1) {
     patch_jump(p, exit_jump);
-    tr_chunk_add(&p->function->chunk, OP_POP);
+    emit_opcode(p, OP_POP);
   }
   end_scope(p);
 }
 
 static void parser_init_func(struct tr_parser* p, struct tr_func* new, int fn_type) {
-  new->enclosing = p->function;
-  p->function    = NULL;
-  p->type        = fn_type;
-  p->function    = new;
+  new->enclosing        = p->compiler->function;
+  p->compiler->function = NULL;
+  p->type               = fn_type;
+  p->compiler->function = new;
   if (fn_type != TYPE_SCRIPT) {
-    p->function->name = tr_string_new_ncpy(p->previous.start, p->previous.length);
+    p->compiler->function->name = tr_string_new_ncpy(p->previous.start, p->previous.length);
   }
-  struct tr_local* local = &p->function->locals.locals[p->function->locals.localCount++];
+  struct tr_local* local = &p->compiler->function->locals.locals[p->function->locals.local_count++];
   local->depth           = 0;
   // local->isCaptured      = 0;
 }
 
 static void parser_end_func(struct tr_parser* p) {
-  tr_chunk_add(&p->function->chunk, OP_NIL);
-  tr_chunk_add(&p->function->chunk, OP_RETURN);
+  emit_opcode(p, OP_NIL);
+  emit_opcode(p, OP_RETURN);
 #ifdef DEBUG_PRINT_CODE
   if (!p->error) {
-    tr_chunk_disassemble(&p->function->chunk,
-                         p->function->name != NULL ? p->function->name->str : "<script>");
+    tr_chunk_disassemble(&p->compiler->function->chunk,
+                         p->compiler->function->name != NULL ? p->function->name->str : "<script>");
   }
 #endif
-  p->function = p->function->enclosing;
+  p->compiler->function = p->function->enclosing;
 }
 
 static void block(struct tr_parser* p) {
@@ -545,8 +553,8 @@ static void function(struct tr_parser* p, int function_type) {
   consume(p, TOKEN_L_PAREN, "Expected ( after function name");
   if (!check(p, TOKEN_R_PAREN)) {
     do {
-      p->function->arity++;
-      if (p->function->arity > 255) {
+      p->compiler->function->arity++;
+      if (p->compiler->function->arity > 255) {
         error_current(p, "Can't have more than 255 parameters, you mad man.");
       }
       uint8_t constant = parse_variable(p, "Expect parameter name");
@@ -557,8 +565,8 @@ static void function(struct tr_parser* p, int function_type) {
   consume(p, TOKEN_L_BRACE, "Expected  { before function body");
   block(p);
   parser_end_func(p);
-  tr_chunk_add(&p->function->chunk, OP_CLOSURE);
-  tr_chunk_add(&p->function->chunk, emit_constant(p, OBJ_VALUE(func)));
+  emit_opcode(p, OP_CLOSURE);
+  emit_opcode(p, emit_constant(p, OBJ_VALUE(func)));
 }
 
 static void func_declaration(struct tr_parser* p) {
@@ -585,17 +593,17 @@ static uint8_t argument_list(struct tr_parser* p) {
 
 static void call(struct tr_parser* p, bool ca) {
   uint8_t arg_count = argument_list(p);
-  tr_chunk_add(&p->function->chunk, OP_CALL);
-  tr_chunk_add(&p->function->chunk, arg_count);
+  emit_opcode(p, OP_CALL);
+  emit_opcode(p, arg_count);
 }
 
 static void emit_return(struct tr_parser* p) {
-  tr_chunk_add(&p->function->chunk, OP_NIL);
-  tr_chunk_add(&p->function->chunk, OP_RETURN);
+  emit_opcode(p, OP_NIL);
+  emit_opcode(p, OP_RETURN);
 }
 
 static void return_statement(struct tr_parser* p) {
-  if (p->function->type == TYPE_SCRIPT) {
+  if (p->compiler->function->type == TYPE_SCRIPT) {
     error(p, "Can't return from the script lol");
   }
   if (match(p, TOKEN_SEMICOLON)) {
@@ -603,7 +611,7 @@ static void return_statement(struct tr_parser* p) {
   } else {
     expression(p);
     consume(p, TOKEN_SEMICOLON, "Expected ; after return val");
-    tr_chunk_add(&p->function->chunk, OP_RETURN);
+    emit_opcode(p, OP_RETURN);
   }
 }
 static void declaration(struct tr_parser* p) {
@@ -638,7 +646,7 @@ static void statement(struct tr_parser* p) {
 
 static void and_(struct tr_parser* p, bool c) {
   int end_jump = emit_jump(p, OP_JMP_FALSE);
-  tr_chunk_add(&p->function->chunk, OP_POP);
+  emit_opcode(p, OP_POP);
   precedence(p, PREC_AND);
   patch_jump(p, end_jump);
 }
@@ -647,7 +655,7 @@ static void or_(struct tr_parser* p, bool ca) {
   int else_jump = emit_jump(p, OP_JMP_FALSE);
   int end_jump  = emit_jump(p, OP_JMP);
   patch_jump(p, else_jump);
-  tr_chunk_add(&p->function->chunk, OP_POP);
+  emit_opcode(p, OP_POP);
 
   precedence(p, PREC_OR);
   patch_jump(p, end_jump);
@@ -701,14 +709,14 @@ static struct tr_parse_rule* tr_parser_get_rule(token_type type) { return &rules
 
 void tr_parser_init(struct tr_parser* p, struct tr_lexer* l) {
   p->lexer = l;
-  p->error = p->panicking = false;
-  p->function             = tr_func_new();
-  p->function->type       = TYPE_SCRIPT;
+  p->error = p->panicking     = false;
+  p->compiler->function       = tr_func_new();
+  p->compiler->function->type = TYPE_SCRIPT;
   memset(&p->preprevious, 0, sizeof(p->preprevious));
   memset(&p->previous, 0, sizeof(p->current));
   memset(&p->current, 0, sizeof(p->current));
 
-  struct tr_local* local = &p->function->locals.locals[p->function->locals.localCount++];
+  struct tr_local* local = &p->compiler->locals[p->compiler->local_count++];
   local->depth           = 0;
   local->name.start      = "";
   local->name.length     = 0;
@@ -719,12 +727,14 @@ bool tr_parser_compile(struct tr_parser* parser) {
   while (!match(parser, TOKEN_EOF)) {
     declaration(parser);
   }
-  tr_chunk_add(&parser->function->chunk, OP_NIL);
-  tr_chunk_add(&parser->function->chunk, OP_RETURN);
+  emit_opcode(parser, OP_NIL);
+  emit_opcode(parser, OP_RETURN);
 #ifdef DEBUG_PRINT_CODE
   if (!parser->error) {
-    tr_chunk_disassemble(&parser->function->chunk,
-                         parser->function->name != NULL ? parser->function->name->str : "<script>");
+    tr_chunk_disassemble(&parser->compiler->function->chunk,
+                         parser->compiler->function->name != NULL
+                             ? parser->compiler->function->name->str
+                             : "<script>");
   }
 #endif
   consume(parser, TOKEN_EOF, "Epected EOF after expression");

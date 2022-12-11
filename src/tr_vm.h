@@ -28,24 +28,13 @@ struct tr_chunk {
   uint8_t* instructions;
 };
 
-struct tr_local {
-  struct tr_token name;
-  int depth;
-};
-
-struct tr_locals {
-  struct tr_local locals[UINT8_MAX + 1];
-  int localCount;
-  int scopeDepth;
-};
-
 typedef enum { TYPE_SCRIPT, TYPE_FUNC } tr_func_type;
 
 struct tr_func {
   struct tr_object obj;
   int arity;
+  int upvalue_count;
   int type;
-  struct tr_locals locals;
   struct tr_chunk chunk;
   struct tr_string* name;
   struct tr_func* enclosing;
