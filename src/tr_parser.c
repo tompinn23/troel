@@ -502,7 +502,7 @@ static void parser_end_func(struct tr_parser* p) {
 #ifdef DEBUG_PRINT_CODE
   if (!p->error) {
     tr_chunk_disassemble(&p->function->chunk,
-                         p->function->name != NULL ? p->function->name->chars : "<script>");
+                         p->function->name != NULL ? p->function->name->str : "<script>");
   }
 #endif
   p->function = p->function->enclosing;
@@ -698,9 +698,9 @@ bool tr_parser_compile(struct tr_parser* parser) {
   tr_chunk_add(&parser->function->chunk, OP_NIL);
   tr_chunk_add(&parser->function->chunk, OP_RETURN);
 #ifdef DEBUG_PRINT_CODE
-  if (!parser.error) {
-    tr_chunk_disassemble(p->function->chunk,
-                         p->function->name != NULL ? p->function->name->str : "<script>");
+  if (!parser->error) {
+    tr_chunk_disassemble(&parser->function->chunk,
+                         parser->function->name != NULL ? parser->function->name->str : "<script>");
   }
 #endif
   consume(parser, TOKEN_EOF, "Epected EOF after expression");

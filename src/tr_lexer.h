@@ -1,6 +1,7 @@
 #ifndef tr_lexer_h
 #define tr_lexer_h
 
+#include <stdbool.h>
 #include <stdlib.h>
 
 typedef enum {
@@ -57,28 +58,29 @@ typedef enum {
 
 struct tr_token {
   token_type type;
-  char* start;
+  char *start;
   int length;
   int line;
 };
 
 struct tr_lexer {
-  char* source;
+  char source[512];
   int size;
-  int capacity;
-  const char* start;
-  const char* current;
+  const char *start;
+  const char *current;
   int line;
+  bool eof;
 
-  int (*getc)(struct tr_lexer* l);
-  int (*peekc)(struct tr_lexer* l);
-  int (*eof)(struct tr_lexer* l);
-  void* user;
+  int (*getc)(struct tr_lexer *l);
+  int (*peekc)(struct tr_lexer *l, int far);
+  // int (*eof)(struct tr_lexer *l);
+  void *user;
 };
 
-void tr_lexer(struct tr_lexer* lex);
+void tr_lexer(struct tr_lexer *lex);
 
-void tr_lexer_str_init(struct tr_lexer* lex, const char* string);
-struct tr_token tr_lexer_next_token(struct tr_lexer* l);
+int tr_lexer_str_init(struct tr_lexer *lex, const char *string);
+int tr_lexer_file_init(struct tr_lexer *l, const char *file);
+struct tr_token tr_lexer_next_token(struct tr_lexer *l);
 
 #endif

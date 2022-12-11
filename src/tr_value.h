@@ -33,6 +33,8 @@ struct tr_value {
   (struct tr_value) { .type = VAL_OBJ, .obj = (struct tr_object*)val }
 #define INT_VALUE(val)                                                                             \
   (struct tr_value) { .type = VAL_LNG, .l = val }
+#define DOUBLE_VALUE(val)                                                                          \
+  (struct tr_value) { .type = VAL_DBL, .d = val }
 
 #define NIL_VAL                                                                                    \
   (struct tr_value) { .type = VAL_NIL }

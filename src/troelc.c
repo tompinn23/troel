@@ -11,7 +11,11 @@
 int main(int argc, char** argv) {
   struct tr_lexer lex;
   struct tr_parser p;
-  tr_lexer_str_init(&lex, "fn Hello() { var b = \"Hello World\"; print(b); } Hello();");
+  // tr_lexer_str_init(&lex, "fn Hello() { var b = \"Hello World\"; print(b); } Hello();");
+  if (tr_lexer_file_init(&lex, "example.tr") < 0) {
+    fprintf(stderr, "Failed to open file.\n");
+    return -1;
+  }
   tr_parser_init(&p, &lex);
   if (!tr_parser_compile(&p)) {
     printf("Parsing failed!\n");

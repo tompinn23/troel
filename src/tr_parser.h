@@ -1,14 +1,17 @@
 #ifndef tr_parser_h
 #define tr_parser_h
 
+#define DEBUG_PRINT_CODE
+
+#include "tr_debug.h"
 #include "tr_lexer.h"
 #include "tr_vm.h"
 #include <stdbool.h>
 
 struct tr_parser {
-  struct tr_lexer* lexer;
-  struct tr_func* enclosing;
-  struct tr_func* function;
+  struct tr_lexer *lexer;
+  struct tr_func *enclosing;
+  struct tr_func *function;
   tr_func_type type;
   struct tr_token preprevious;
   struct tr_token previous;
@@ -18,8 +21,8 @@ struct tr_parser {
   bool panicking;
 };
 
-void tr_parser_init(struct tr_parser* p, struct tr_lexer* l);
+void tr_parser_init(struct tr_parser *p, struct tr_lexer *l);
 
-bool tr_parser_compile(struct tr_parser* parser);
+bool tr_parser_compile(struct tr_parser *parser);
 
 #endif // tr_parser_h
