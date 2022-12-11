@@ -59,6 +59,7 @@ static void skip_ws(struct tr_lexer* l) {
       l->getc(l);
       break;
     case '\n':
+      l->line++;
       l->getc(l);
       break;
     case '/':
@@ -155,6 +156,7 @@ void tr_lexer_init(struct tr_lexer* lex) {
   lex->line    = 0;
   lex->current = lex->source;
   lex->size    = 0;
+  lex->eof     = false;
 }
 
 int s_getc(struct tr_lexer* l) {
@@ -196,7 +198,7 @@ int f_peekc(struct tr_lexer* l, int far) {
   FILE* fp   = l->user;
   size_t off = ftell(fp);
   fseek(fp, far, SEEK_CUR);
-  int ch;
+  char ch;
   if (fread(&ch, sizeof(char), 1, fp) != 1) {
     fseek(fp, off, SEEK_SET);
     return '\0';
@@ -261,4 +263,13 @@ struct tr_token tr_lexer_next_token(struct tr_lexer* l) {
   }
   // clang-format on
   return error_token(l, "Unknown Input");
+}
+
+struct tr_token tr_token_cpy(struct tr_token o) {
+  struct tr_token ret;
+  ret.length = o.length;
+  ret.line   = o.line;
+  ret.type   = o.type;
+  ret.start  = mem_strndup(o.start, o.length);
+  return ret;
 }

@@ -83,4 +83,6 @@ int tr_lexer_str_init(struct tr_lexer *lex, const char *string);
 int tr_lexer_file_init(struct tr_lexer *l, const char *file);
 struct tr_token tr_lexer_next_token(struct tr_lexer *l);
 
+struct tr_token tr_token_cpy(struct tr_token o);
+
 #endif

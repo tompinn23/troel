@@ -1,0 +1,11 @@
+fn Hello() {
+	var x = 12;
+	var y = 4;
+	var z = y * x;
+	print(z);
+	print("Hello World!");
+}
+
+Hello();
+print("Hi Guys");
+print(4 + 7);

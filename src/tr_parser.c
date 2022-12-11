@@ -62,7 +62,7 @@ static void error_current(struct tr_parser* p, const char* message) {
 }
 static void error(struct tr_parser* p, const char* message) { error_at(p, &p->previous, message); }
 
-static void emit_constant(struct tr_parser* p, struct tr_value val) {
+static int emit_constant(struct tr_parser* p, struct tr_value val) {
   int id = tr_constants_add(&p->function->chunk.constants, val);
   if (id > UINT8_MAX) {
     error(p, "Too many constants in one chunk (function, etc.)");
@@ -70,6 +70,7 @@ static void emit_constant(struct tr_parser* p, struct tr_value val) {
   }
   tr_chunk_add(&p->function->chunk, OP_CONSTANT);
   tr_chunk_add(&p->function->chunk, id);
+  return id;
 }
 
 static void advance(struct tr_parser* p) {
@@ -262,7 +263,7 @@ static void add_local(struct tr_parser* p, struct tr_token name) {
     return;
   }
   struct tr_local* local = &p->function->locals.locals[p->function->locals.localCount++];
-  local->name            = name;
+  local->name            = tr_token_cpy(name);
   local->depth           = -1;
 }
 
@@ -324,9 +325,9 @@ static void var_declaration(struct tr_parser* p) {
   define_global(p, global);
 }
 
-static int resolve_local(struct tr_parser* p, struct tr_token* name) {
-  for (int i = p->function->locals.localCount - 1; i >= 0; i--) {
-    struct tr_local* local = &p->function->locals.locals[i];
+static int resolve_local_up(struct tr_parser* p, struct tr_func* f, struct tr_token* name) {
+  for (int i = f->locals.localCount - 1; i >= 0; i--) {
+    struct tr_local* local = &f->locals.locals[i];
     if (identifier_equals(name, &local->name)) {
       if (local->depth == -1) {
         error(p, "Can't read local variable in its own initializer");
@@ -337,12 +338,34 @@ static int resolve_local(struct tr_parser* p, struct tr_token* name) {
   return -1;
 }
 
+static int resolve_local(struct tr_parser* p, struct tr_token* name) {
+  return resolve_local_up(p, p->function, name);
+}
+
+static int add_upvalue(struct tr_func* p, uint8_t local, bool isLocal) {
+  int upvalue_count = p->upvalue_count;
+
+}
+
+static int resolve_upvalue(struct tr_parser* p, struct tr_token* name) {
+  if (p->enclosing == NULL)
+    return -1;
+  int local = resolve_local_up(p, p->enclosing, name);
+  if (local != -1) {
+    return add_upvalue(p->function, (uint8_t)local, true);
+  }
+  return -1;
+}
+
 static void variable(struct tr_parser* p, bool canAssign) {
   uint8_t get_op, set_op;
   int arg = resolve_local(p, &p->previous);
   if (arg != -1) {
     get_op = OP_GET_LOCAL;
     set_op = OP_SET_LOCAL;
+  } else if ((arg = resolve_upvalue(p, &p->previous)) != -1) {
+    get_op = OP_GET_UPVAL;
+    set_op = OP_SET_UPVAL;
   } else {
     arg    = ident_constant(p, &p->previous);
     get_op = OP_GET_GLOBAL;
@@ -534,7 +557,8 @@ static void function(struct tr_parser* p, int function_type) {
   consume(p, TOKEN_L_BRACE, "Expected  { before function body");
   block(p);
   parser_end_func(p);
-  emit_constant(p, OBJ_VALUE(func));
+  tr_chunk_add(&p->function->chunk, OP_CLOSURE);
+  tr_chunk_add(&p->function->chunk, emit_constant(p, OBJ_VALUE(func)));
 }
 
 static void func_declaration(struct tr_parser* p) {

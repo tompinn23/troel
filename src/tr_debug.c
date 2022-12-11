@@ -72,6 +72,8 @@ const char* tr_debug_value_type(struct tr_value* val) {
     return "cfunc<??>";
   case VAL_OBJ:
     switch (val->obj->type) {
+    case OBJ_CLOSURE:
+      return "object<closure>";
     case OBJ_FUNC:
       return "object<func>";
     case OBJ_NULL:
@@ -83,7 +85,7 @@ const char* tr_debug_value_type(struct tr_value* val) {
 }
 
 static int singleOperandOpcode(const char* name, struct tr_chunk* chunk, int offset) {
-  printf("%s ", name);
+  printf("%-16s ", name);
   printf("%03d ", chunk->instructions[offset + 1]);
   struct tr_value* val = tr_constants_get(&chunk->constants, chunk->instructions[offset + 1]);
   char buf[128];
@@ -93,8 +95,8 @@ static int singleOperandOpcode(const char* name, struct tr_chunk* chunk, int off
 }
 
 static int singleByteOpcode(const char* name, struct tr_chunk* chunk, int offset) {
-  printf("%s ", name);
-  printf("%03d ", chunk->instructions[offset + 1]);
+  printf("%-16s ", name);
+  printf("%03d\n", chunk->instructions[offset + 1]);
   return offset + 2;
 }
 
@@ -134,7 +136,15 @@ int tr_opcode_dissasemble(struct tr_chunk* chunk, int offset) {
   case OP_LOOP:
     return jumpOpcode("OP_LOOP", -1, chunk, offset);
   case OP_CALL:
-    return simpleOpcode("OP_CALL", offset);
+    return singleByteOpcode("OP_CALL",chunk, offset);
+  case OP_CLOSURE: {
+    char buf[256];
+    offset++;
+    uint8_t constant = chunk->instructions[offset++];
+    tr_debug_print_val(&chunk->constants.values[constant], buf, sizeof(buf));
+    printf("%-16s %03d %s\n", "OP_CLOSURE", constant, buf);
+    return offset;
+  }
   case OP_EQUAL:
     return simpleOpcode("OP_EQUAL", offset);
   case OP_NEQUAL:

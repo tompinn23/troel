@@ -68,13 +68,13 @@ struct tr_value* tr_constants_get(struct tr_constants* constants, int index) {
 
 struct tr_func* tr_func_new() {
   struct tr_func* func = mem_alloc(sizeof(*func));
-  tr_object_init(&func->obj);
-  func->obj.type     = OBJ_FUNC;
+  tr_object_init(&func->obj, OBJ_FUNC);
   func->obj.destruct = tr_func_destroy;
   func->arity        = 0;
   func->name         = NULL;
   func->type         = TYPE_FUNC;
   tr_chunk_init(&func->chunk);
+  memset(func->locals.locals, 0, sizeof(struct tr_local) * (UINT8_MAX + 1));
   func->locals.localCount = 0;
   func->locals.scopeDepth = 0;
   return func;
@@ -86,8 +86,20 @@ void tr_func_destroy(struct tr_object* obj) {
   if (func->name != NULL) {
     tr_string_free(func->name);
   }
+  for (int i = 1; i < func->locals.localCount; i++) {
+    mem_free(func->locals.locals[i].name.start);
+  }
   mem_free(func);
 }
+
+struct tr_closure* tr_closure_new(struct tr_func* func) {
+  struct tr_closure* c = mem_alloc(sizeof(*c));
+  tr_object_init(&c->obj, OBJ_CLOSURE);
+  c->func = func;
+  c->obj.destruct = tr_closure_free;
+  return c;
+}
+void tr_closure_free(struct tr_closure* c) { mem_free(c); }
 
 static void vm_reset_stack(struct tr_vm* vm) { vm->stackTop = vm->stack; }
 
@@ -106,6 +118,7 @@ struct tr_vm* tr_vm_new() {
 }
 
 void tr_vm_init(struct tr_vm* vm) {
+  vm->frame_count = 0;
   vm_reset_stack(vm);
   tr_table_init(&vm->globals);
 }
@@ -177,11 +190,10 @@ static inline double tr_vm_fpop(struct tr_vm* vm) { return tr_vm_pop(vm).d; }
     }                                                                                              \
   } while (0)
 
-#define STRING_CONSTANT() (chunk->constants.values[READ_BYTE()].s)
 
-static bool call(struct tr_vm* vm, struct tr_func* func, int arg_count) {
-  if (arg_count != func->arity) {
-    tr_vm_runtime_err(vm, "Expected %d arguments recieved %d.", func->arity, arg_count);
+static bool call(struct tr_vm* vm, struct tr_closure* c, int arg_count) {
+  if (arg_count != c->func->arity) {
+    tr_vm_runtime_err(vm, "Expected %d arguments recieved %d.", c->func->arity, arg_count);
     return false;
   }
   if (vm->frame_count == FRAMES_MAX) {
@@ -189,8 +201,8 @@ static bool call(struct tr_vm* vm, struct tr_func* func, int arg_count) {
     return false;
   }
   struct tr_call_frame* frame = &vm->frames[vm->frame_count++];
-  frame->func                 = func;
-  frame->ip                   = func->chunk.instructions;
+  frame->func                 = c;
+  frame->ip                   = c->func->chunk.instructions;
   frame->slots                = vm->stackTop - arg_count - 1;
   return true;
 }
@@ -205,8 +217,10 @@ static bool call_value(struct tr_vm* vm, struct tr_value func, int args) {
   }
   if (func.type == VAL_OBJ) {
     switch (func.obj->type) {
-    case OBJ_FUNC:
-      return call(vm, (struct tr_func*)(func.obj), args);
+    case OBJ_CLOSURE:
+      return call(vm, (struct tr_closure*)(func.obj), args);
+    /*case OBJ_FUNC:
+      return call(vm, (struct tr_func*)(func.obj), args);*/
     default:
       break;
     }
@@ -217,13 +231,17 @@ static bool call_value(struct tr_vm* vm, struct tr_value func, int args) {
 
 int tr_vm_do_chunk(struct tr_vm* vm, struct tr_func* func) {
   tr_vm_push(vm, (struct tr_value){.type = VAL_OBJ, .obj = (struct tr_object*)func});
-  call(vm, func, 0);
+  struct tr_closure* c = tr_closure_new(func);
+  call(vm, c, 0);
   return tr_vm_do_call_frame(vm, &vm->frames[vm->frame_count - 1]);
 }
 
+
+#define STRING_CONSTANT() (chunk->constants.values[READ_BYTE()].s)
+
 static int tr_vm_do_call_frame(struct tr_vm* vm, struct tr_call_frame* fr) {
   struct tr_call_frame* frame = fr;
-  struct tr_chunk* chunk      = &frame->func->chunk;
+  struct tr_chunk* chunk      = &frame->func->func->chunk;
 #define READ_BYTE() (*frame->ip++)
 #define READ_SHORT() (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
   for (;;) {
@@ -254,7 +272,14 @@ static int tr_vm_do_call_frame(struct tr_vm* vm, struct tr_call_frame* fr) {
       vm->stackTop = frame->slots;
       tr_vm_push(vm, res);
       frame = &vm->frames[vm->frame_count - 1];
-      chunk = &frame->func->chunk;
+      chunk = &frame->func->func->chunk;
+      break;
+    }
+    case OP_CLOSURE: {
+      uint8_t idx       = READ_BYTE();
+      struct tr_func* f = chunk->constants.values[idx].obj;
+      struct tr_closure* c = tr_closure_new(f);
+      tr_vm_push(vm, OBJ_VALUE(c));
       break;
     }
     case OP_CALL: {
@@ -263,7 +288,7 @@ static int tr_vm_do_call_frame(struct tr_vm* vm, struct tr_call_frame* fr) {
         return TR_VM_E_RUNTIME;
       }
       frame = &vm->frames[vm->frame_count - 1];
-      chunk = &frame->func->chunk;
+      chunk = &frame->func->func->chunk;
       break;
     }
     case OP_JMP_FALSE: {

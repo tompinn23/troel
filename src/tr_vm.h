@@ -51,8 +51,13 @@ struct tr_func {
   struct tr_func* enclosing;
 };
 
-struct tr_call_frame {
+struct tr_closure {
+  struct tr_object obj;
   struct tr_func* func;
+};
+
+struct tr_call_frame {
+  struct tr_closure* func;
   uint8_t* ip;
   struct tr_value* slots;
 };
@@ -80,6 +85,9 @@ struct tr_value* tr_constants_get(struct tr_constants* constants, int index);
 
 struct tr_func* tr_func_new();
 void tr_func_destroy(struct tr_object* obj);
+
+struct tr_closure* tr_closure_new(struct tr_func* func);
+void tr_closure_free(struct tr_closure* c);
 
 struct tr_vm* tr_vm_new();
 void tr_vm_init(struct tr_vm* vm);
